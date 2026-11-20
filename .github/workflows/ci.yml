@@ -1,0 +1,49 @@
+name: CI
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.11.19"
+      - run: uv sync --locked --python 3.12
+      - run: uv run --no-sync pytest
+      - run: uv build --wheel
+      - name: Install and test wheel over stdio
+        shell: pwsh
+        run: |
+          $wheel = (Get-ChildItem -Path dist -Filter *.whl | Select-Object -First 1).FullName
+          uv run --no-project --isolated --python 3.12 --with "$wheel" python tests/smoke_deployment.py stdio
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.11.19"
+      - run: uv sync --locked --python 3.12
+      - name: Start container
+        run: |
+          cp .env.example .env
+          docker compose up -d --build
+      - name: Test MCP over HTTP
+        run: uv run --no-sync python tests/smoke_deployment.py http
+      - if: failure()
+        run: docker compose logs --no-color
+      - if: always()
+        run: docker compose down

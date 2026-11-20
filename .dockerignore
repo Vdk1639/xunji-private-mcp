@@ -1,0 +1,8 @@
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!LICENSE
+!src/
+!src/xunji_private_mcp/
+!src/xunji_private_mcp/*.py
