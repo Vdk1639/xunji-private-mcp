@@ -24,7 +24,7 @@ def _setup(module, monkeypatch, *responses):
     call = AsyncMock(side_effect=responses)
     confirm = AsyncMock()
     monkeypatch.setattr(module, "confirm", confirm)
-    module.register_tools(tools, SimpleNamespace(call=call))
+    module.register_tools(tools, SimpleNamespace(call=call, credential_scope=lambda route: "test-account"))
     return tools, call, confirm
 
 

@@ -8,6 +8,8 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
+from xunji_private_mcp.credentials import KEY_NAMES
+
 
 URL = "http://127.0.0.1:8765/mcp"
 
@@ -18,7 +20,7 @@ async def connect(transport):
         parameters = StdioServerParameters(
             command="xunji-private-mcp",
             args=["stdio"],
-            env={"PATH": os.environ["PATH"], "XUNJI_BODY_KEY": ""},
+            env={"PATH": os.environ["PATH"], **dict.fromkeys(KEY_NAMES, "")},
         )
         async with stdio_client(parameters) as streams:
             yield streams
@@ -47,12 +49,13 @@ async def smoke(transport):
         initialized = await session.initialize()
         assert initialized.serverInfo.name == "xunji-private-mcp"
         tools = await session.list_tools()
-        assert any(tool.name == "query_body_metrics" for tool in tools.tools)
+        assert not tools.tools
         result = await session.call_tool(
             "query_body_metrics",
             {"start_date": "2026-06-28", "end_date": "2026-06-28"},
         )
-        assert result.isError and "XUNJI_BODY_KEY" in str(result.content), result
+        key_setting = "XUNJI_BODY_KEY" if transport == "stdio" else "X-Xunji-Body-Key"
+        assert result.isError and key_setting in str(result.content), result
 
 
 if __name__ == "__main__":

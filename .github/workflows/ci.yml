@@ -38,9 +38,7 @@ jobs:
           version: "0.11.19"
       - run: uv sync --locked --python 3.12
       - name: Start container
-        run: |
-          cp .env.example .env
-          docker compose up -d --build
+        run: docker compose up -d --build
       - name: Test MCP over HTTP
         run: uv run --no-sync python tests/smoke_deployment.py http
       - if: failure()

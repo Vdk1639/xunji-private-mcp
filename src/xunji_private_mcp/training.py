@@ -136,7 +136,7 @@ def _validate_note(train: dict[str, Any]) -> bool:
 
 
 def register_tools(server: FastMCP, api: ApiClient) -> None:
-    pending_days: set[date] = set()
+    pending_days: set[tuple[str, date]] = set()
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
     async def get_training(datestr: date, include_full_data: bool = False) -> Any:
@@ -170,13 +170,14 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         if not client_request_id.strip():
             raise ToolError("请提供唯一 client_request_id，重试相同写入时保留此值。")
         day = _training_day(trains)
-        if day in pending_days:
+        pending = (api.credential_scope("training_write"), day)
+        if pending in pending_days:
             raise ToolError("该日期已有训练写入待确认或提交，请稍后重试。")
-        pending_days.add(day)
+        pending_days.add(pending)
         try:
             return await apply_training_update(ctx, trains, day, client_request_id)
         finally:
-            pending_days.remove(day)
+            pending_days.remove(pending)
 
     async def apply_training_update(
         ctx: Context, trains: list[dict[str, Any]], day: date, client_request_id: str,

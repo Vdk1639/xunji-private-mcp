@@ -1,23 +1,19 @@
 import asyncio
 import json
 import math
-import os
 import time
 from copy import deepcopy
 from dataclasses import dataclass
-from pathlib import Path
 
 import httpx
-from dotenv import dotenv_values
 
+from .credentials import (
+    AUTHORIZATION, BODY, FOOD, FOOD_SEARCH, KEY_HEADERS, REQUEST_KEYS, TEMPLATE, TRAIN, fingerprint, valid_key,
+)
 from .interaction import ToolError
 
-TRAIN = "XUNJI_TRAIN_KEY"
-FOOD = "XUNJI_FOOD_KEY"
-FOOD_SEARCH = "XUNJI_FOOD_SEARCH_KEY"
-BODY = "XUNJI_BODY_KEY"
-TEMPLATE = "XUNJI_AGENT_TEMPLATE_KEY"
-KEY_NAMES = (TRAIN, FOOD, FOOD_SEARCH, BODY, TEMPLATE)
+MAX_CACHE_ENTRIES = 256
+MAX_RATE_BUCKETS = 4096
 
 TRAIN_URL = "https://trains.xunjiapp.cn"
 FOOD_URL = "https://eatings.xunjiapp.cn"
@@ -52,14 +48,6 @@ class UpstreamError(ToolError):
         self.code = code
 
 
-def load_keys(env_file: Path) -> dict[str, str]:
-    file_values = dotenv_values(env_file, encoding="utf-8-sig", interpolate=False)
-    return {
-        name: (os.environ.get(name, file_values.get(name)) or "").strip()
-        for name in KEY_NAMES
-    }
-
-
 def retry_seconds(payloads: tuple[dict, ...], response: httpx.Response) -> float:
     hints = [payload.get("retry_after_ms") for payload in payloads]
     if response.headers.get("Retry-After"):
@@ -74,18 +62,45 @@ def retry_seconds(payloads: tuple[dict, ...], response: httpx.Response) -> float
 
 
 class ApiClient:
-    def __init__(self, keys: dict[str, str], transport: httpx.AsyncBaseTransport | None = None):
-        self._keys = keys.copy()
+    def __init__(self, keys: dict[str, str] | None = None, transport: httpx.AsyncBaseTransport | None = None):
+        self._stdio_keys = dict(keys or {})
         self._transport = transport
-        self._cache: dict[tuple[str, str], tuple[float, object]] = {}
-        self._next_call: dict[tuple[str, str], float] = {}
-        self._cache_version: dict[str, int] = {}
+        self._cache: dict[tuple[str, str, str], tuple[float, object]] = {}
+        self._next_call: dict[tuple[str, str, str], float] = {}
+        self._inflight_reads: set[tuple[str, str, object]] = set()
+
+    def require_credential(self, route: str) -> tuple[str, str]:
+        name = ROUTES[route].key
+        request_keys = REQUEST_KEYS.get()
+        keys = self._stdio_keys if request_keys is None else request_keys
+        setting = name if request_keys is None else KEY_HEADERS[name]
+        key = keys.get(name)
+        if request_keys is not None and key is None and AUTHORIZATION in request_keys:
+            key = request_keys[AUTHORIZATION]
+            setting = AUTHORIZATION
+        if not key:
+            options = setting if request_keys is None else f"Authorization: Bearer <训记官方 Key> 或 {setting}"
+            raise UpstreamError("key_missing", f"请在客户端配置 {options} 后重新连接 MCP。")
+        if not valid_key(key):
+            raise UpstreamError("key_invalid", f"{setting} 格式无效，请在客户端更新 Key 后重新连接 MCP。")
+        return key, setting
+
+    def has_credential(self, route: str) -> bool:
+        try:
+            self.require_credential(route)
+        except UpstreamError:
+            return False
+        return True
+
+    def credential_scope(self, route: str) -> str:
+        key, _ = self.require_credential(route)
+        return fingerprint(f"{ROUTES[route].key}:{key}")
 
     def _rate_error(self, wait: float) -> UpstreamError:
         return UpstreamError("rate_limited", f"训记接口限频，请在 {math.ceil(wait)} 秒后重试。")
 
     async def wait_for_rate_limit(self, route: str, rate_scope: str = "") -> None:
-        wait = self._next_call.get((route, rate_scope), 0) - time.monotonic()
+        wait = self._next_call.get((route, self.credential_scope(route), rate_scope), 0) - time.monotonic()
         if wait > ROUTES[route].rate:
             raise self._rate_error(wait)
         if wait > 0:
@@ -102,27 +117,28 @@ class ApiClient:
         invalidate: tuple[str, ...] = (),
     ):
         endpoint = ROUTES[route]
-        key = self._keys.get(endpoint.key)
-        if not key:
-            raise UpstreamError("key_missing", f"请配置 {endpoint.key} 后重启 MCP。")
-        if not key.isascii() or not key.isprintable() or any(char.isspace() for char in key):
-            raise UpstreamError("key_invalid", f"{endpoint.key} 格式无效，请从训记 App 复制 Key 后重启 MCP。")
+        key, setting = self.require_credential(route)
+        owner = fingerprint(f"{endpoint.key}:{key}")
 
         now = time.monotonic()
         self._cache = {item: entry for item, entry in self._cache.items() if entry[0] > now}
-        cache_key = (route, json.dumps(body, sort_keys=True)) if cache_ttl else None
+        cache_key = (route, owner, json.dumps(body, sort_keys=True)) if cache_ttl else None
         if cache_key in self._cache:
             return deepcopy(self._cache[cache_key][1])
-        cache_version = self._cache_version.get(route, 0)
 
         self._next_call = {bucket: until for bucket, until in self._next_call.items() if until > now}
-        bucket = (route, rate_scope)
+        bucket = (route, owner, rate_scope)
         wait = self._next_call.get(bucket, 0) - now
         if wait > 0:
             raise self._rate_error(wait)
+        if len(self._next_call) >= MAX_RATE_BUCKETS:
+            raise UpstreamError("busy", "MCP 当前请求过多，请稍后重试。")
         period = endpoint.rate if rate_seconds is None else rate_seconds
         self._next_call[bucket] = now + period
 
+        inflight = (route, owner, object())
+        if cache_key is not None:
+            self._inflight_reads.add(inflight)
         try:
             async with httpx.AsyncClient(timeout=15, follow_redirects=False, transport=self._transport) as client:
                 response = await client.post(
@@ -132,6 +148,9 @@ class ApiClient:
                 )
         except httpx.HTTPError:
             raise UpstreamError("connection", "无法连接训记或读取响应。请检查网络后重试。") from None
+        finally:
+            cache_current = inflight in self._inflight_reads
+            self._inflight_reads.discard(inflight)
 
         try:
             payload = response.json()
@@ -165,7 +184,7 @@ class ApiClient:
             if response.status_code in (401, 403) or any(
                 phrase in error_text for phrase in ("apikey missing", "apikey invalid", "api key missing", "api key invalid")
             ):
-                raise UpstreamError("key_invalid", f"训记拒绝了 {endpoint.key}，请更新该 Key 后重启 MCP。")
+                raise UpstreamError("key_invalid", f"训记拒绝了 {setting}，请在客户端更新该 Key 后重新连接 MCP。")
             if response.status_code == 409 or "version conflict" in error_text:
                 raise UpstreamError("version_conflict", "训记版本冲突（version conflict），请重新读取数据。")
             if "user confirmation required" in error_text:
@@ -177,9 +196,12 @@ class ApiClient:
             raise UpstreamError("rejected", f"训记未接受请求或响应格式异常（HTTP {response.status_code}）。")
 
         if invalidate:
-            self._cache = {item: entry for item, entry in self._cache.items() if item[0] not in invalidate}
-            for name in invalidate:
-                self._cache_version[name] = self._cache_version.get(name, 0) + 1
-        if cache_key is not None and cache_version == self._cache_version.get(route, 0):
+            self._cache = {item: entry for item, entry in self._cache.items() if item[0] not in invalidate or item[1] != owner}
+            self._inflight_reads = {
+                item for item in self._inflight_reads if item[0] not in invalidate or item[1] != owner
+            }
+        if cache_key is not None and cache_current:
+            if len(self._cache) >= MAX_CACHE_ENTRIES:
+                self._cache.pop(next(iter(self._cache)))
             self._cache[cache_key] = (time.monotonic() + cache_ttl, deepcopy(result))
         return result
