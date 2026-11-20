@@ -29,7 +29,7 @@ async def connect(transport):
             try:
                 await http.get(URL)
                 break
-            except httpx.ConnectError:
+            except (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError):
                 if attempt == 19:
                     raise
                 await asyncio.sleep(1)
