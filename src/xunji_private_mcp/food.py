@@ -151,3 +151,43 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         return await api.call(
             "food_custom", {"client_request_id": request_id, "dry_run": False, "food": food},
         )
+
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
+    async def list_food_templates() -> Any:
+        """List user's saved food templates for quick meal planning.
+
+        Returns template IDs, names, and meal contents that can be applied to dates.
+        """
+        return await api.call("food_templates_list", {}, cache_ttl=15)
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=True
+        )
+    )
+    async def apply_food_template(
+        template_id: Text,
+        target_date: date,
+        ctx: Context,
+        client_request_id: Text | None = None,
+    ) -> Any:
+        """Apply a saved food template to a specific date.
+
+        Copies all meals from the template to the target date. Obtain template_id
+        from list_food_templates. Reuse client_request_id when retrying.
+
+        Args:
+            template_id: Template identifier from list_food_templates
+            target_date: Date to apply the template to
+            client_request_id: Unique request ID for idempotency
+        """
+        request_id = client_request_id or str(uuid4())
+        return await api.call(
+            "food_templates_apply",
+            {
+                "template_id": template_id,
+                "target_date": target_date.isoformat(),
+                "client_request_id": request_id,
+            },
+            invalidate=("food_query",),
+        )

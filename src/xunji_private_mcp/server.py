@@ -25,6 +25,8 @@ TOOL_ROUTES = {
     "upsert_food_records": "food_write",
     "upsert_custom_food": "food_custom",
     "search_official_food": "food_search",
+    "list_food_templates": "food_templates_list",
+    "apply_food_template": "food_templates_apply",
     "query_body_metrics": "body_query",
     "upsert_body_metrics": "body_write",
     "sync_agent_templates": "template_sync",

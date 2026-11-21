@@ -34,6 +34,11 @@ def test_food_reads_validate_dates_and_use_separate_routes(tools):
     assert api.call.await_count == 1
     asyncio.run(server.call_tool("search_official_food", {"keyword": " 鸡蛋 "}))
     api.call.assert_awaited_with("food_search", {"keyword": "鸡蛋", "limit": 8}, cache_ttl=15)
+
+    # Test template listing
+    asyncio.run(server.call_tool("list_food_templates", {}))
+    api.call.assert_awaited_with("food_templates_list", {}, cache_ttl=15)
+
     assert food.shift_months(date(2024, 2, 29), -12) == date(2023, 2, 28)
     assert food.shift_months(date(2024, 1, 31), 3) == date(2024, 4, 30)
 
@@ -58,6 +63,22 @@ def test_food_write_directly_executes_and_invalidates_cache(tools):
     api.call.assert_awaited_once_with(
         "food_write",
         {"client_request_id": "retry-id", "dry_run": False, "foods": [record]},
+        invalidate=("food_query",),
+    )
+
+
+def test_food_template_apply_invalidates_cache(tools):
+    """Test that applying templates invalidates food query cache."""
+    server, api = tools
+    asyncio.run(
+        server.call_tool(
+            "apply_food_template",
+            {"template_id": "tpl123", "target_date": "2026-11-21", "client_request_id": "apply-1"},
+        )
+    )
+    api.call.assert_awaited_once_with(
+        "food_templates_apply",
+        {"template_id": "tpl123", "target_date": "2026-11-21", "client_request_id": "apply-1"},
         invalidate=("food_query",),
     )
 

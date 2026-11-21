@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **饮食模板功能**：
+  - `list_food_templates` - 列出用户保存的饮食模板
+  - `apply_food_template` - 将饮食模板套用到指定日期
+
+### Changed
+
+- **工具总数**：从 11 增加到 13
+- **文档改进**：
+  - 添加关于 lite 模式行为的注意事项
+  - 移除关于"等待字段公开"的过时说明
+
+### Fixed
+
+- **get_training 文档**：补充说明 lite 模式可能不返回未完成训练的原因
+
 ## [0.3.0] - 2024-11-21
 
 ### Added

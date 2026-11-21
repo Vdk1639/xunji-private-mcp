@@ -35,6 +35,8 @@ ROUTES = {
     "food_write": Route(FOOD, f"{FOOD_URL}/open/food/upsert_gzip"),
     "food_custom": Route(FOOD, f"{FOOD_URL}/open/food/custom/upsert_gzip"),
     "food_search": Route(FOOD_SEARCH, f"{API_URL}/open_agent/food/search_gzip"),
+    "food_templates_list": Route(FOOD, f"{FOOD_URL}/open/food/templates/list_gzip"),
+    "food_templates_apply": Route(FOOD, f"{FOOD_URL}/open/food/templates/apply_gzip"),
     "body_query": Route(BODY, f"{API_URL}/open/body/query_gzip"),
     "body_write": Route(BODY, f"{API_URL}/open/body/upsert_gzip"),
     "template_sync": Route(TEMPLATE, f"{TRAIN_URL}/api_agent_templates_sync_for_llm_v2", 0),
