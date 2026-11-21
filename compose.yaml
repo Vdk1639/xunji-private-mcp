@@ -2,11 +2,20 @@ services:
   xunji-private-mcp:
     build: .
     image: xunji-private-mcp:local
+    container_name: xunji-private-mcp
     environment:
       XUNJI_HTTP_ALLOWED_HOSTS: ${XUNJI_HTTP_ALLOWED_HOSTS:-}
       XUNJI_HTTP_ALLOWED_ORIGINS: ${XUNJI_HTTP_ALLOWED_ORIGINS:-}
+      XUNJI_APPROVAL_BASE_URL: ${XUNJI_APPROVAL_BASE_URL:-}
     ports:
       - "127.0.0.1:8765:8765"
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=5)\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

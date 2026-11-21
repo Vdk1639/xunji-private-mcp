@@ -195,6 +195,72 @@ def http_result(response):
     return json.loads(data)["result"]
 
 
+def test_http_browser_approval_requires_account_and_consumes_link(monkeypatch):
+    import re
+    from urllib.parse import urlsplit
+
+    from xunji_private_mcp import approval
+
+    writes = []
+    now = 100.0
+    monkeypatch.setattr(approval, "monotonic", lambda: now)
+
+    def respond(request):
+        writes.append((request.headers["Authorization"], json.loads(request.content)))
+        return httpx.Response(200, json={"success": True, "res": {"saved": True}})
+
+    origin = "http://127.0.0.1:8765"
+    app = create_server(ApiClient(transport=httpx.MockTransport(respond)), approval_origin=origin).streamable_http_app()
+    with TestClient(app, base_url=origin) as client:
+        headers = open_http_session(client, {KEY_HEADERS[FOOD]: "correct-key"})
+        arguments = {
+            "name": "<script>review me</script>",
+            "ntr": {"cal": 165, "protein": 31, "fat": 3.6, "carb": 0},
+            "nutrition_source": "package label",
+        }
+
+        def stage():
+            result = http_result(client.post("/mcp", headers=headers, json={
+                "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                    "name": "upsert_custom_food", "arguments": arguments,
+                },
+            }))
+            payload = result.get("structuredContent") or json.loads(result["content"][0]["text"])
+            assert payload["status"] == "approval_required"
+            return urlsplit(payload["approval_url"]).path
+
+        def review(path):
+            page = client.post(path, headers={"Origin": origin}, data={"action": "review", "key": "correct-key"})
+            assert page.status_code == 200
+            assert "&lt;script&gt;review me&lt;/script&gt;" in page.text
+            assert "correct-key" not in page.text
+            return re.search(r'name="review_token" value="([\w-]+)"', page.text)[1]
+
+        path = stage()
+        page = client.get(path)
+        assert page.headers["Cache-Control"] == "no-store"
+        assert "review me" not in page.text
+        assert client.post(path, data={"action": "review", "key": "correct-key"}).status_code == 403
+        assert client.post(path, headers={"Origin": origin}, data={"action": "review", "key": "wrong-key"}).status_code == 403
+        assert client.post(path, headers={"Origin": origin}, data={"action": "approve"}).status_code == 403
+        proof = review(path)
+        assert writes == []
+        assert client.post(path, headers={"Origin": origin}, data={"action": "approve", "review_token": proof}).status_code == 200
+        assert client.post(path, headers={"Origin": origin}, data={"action": "approve", "review_token": proof}).status_code == 404
+        assert writes[0][0] == "Bearer correct-key"
+        assert writes[0][1]["food"]["name"] == arguments["name"]
+        assert writes[0][1]["dry_run"] is False
+
+        canceled = stage()
+        proof = review(canceled)
+        assert client.post(canceled, headers={"Origin": origin}, data={"action": "cancel", "review_token": proof}).status_code == 200
+        assert client.get(canceled).status_code == 404
+        expired = stage()
+        now += approval.TTL + 1
+        assert client.get(expired).status_code == 404
+        assert len(writes) == 1
+
+
 def test_http_lists_only_configured_scopes_and_rejects_unconfigured_calls():
     requests = []
 

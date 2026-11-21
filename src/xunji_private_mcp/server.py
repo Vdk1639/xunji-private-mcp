@@ -7,8 +7,11 @@ from mcp import types
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
+from starlette.responses import PlainTextResponse
+from starlette.routing import Route
 
 from . import body, food, templates, training
+from .approval import APPROVAL_PATH, BrowserApprovals
 from .credentials import BindHttpCredentials, REQUEST_KEYS, load_stdio_keys
 from .upstream import ApiClient
 
@@ -34,6 +37,7 @@ class XunjiMCP(FastMCP):
     def __init__(self, api: ApiClient, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.api = api
+        self.approvals: BrowserApprovals | None = None
 
     @contextmanager
     def _request_credentials(self):
@@ -61,6 +65,13 @@ class XunjiMCP(FastMCP):
 
     def streamable_http_app(self) -> Starlette:
         app = super().streamable_http_app()
+        if self.approvals is not None:
+            app.router.routes.append(Route(APPROVAL_PATH, self.approvals.handle, methods=["GET", "POST"]))
+
+        async def health_check(_):
+            return PlainTextResponse("OK", status_code=200)
+
+        app.router.routes.append(Route("/health", health_check, methods=["GET"]))
         app.add_middleware(BindHttpCredentials)
         return app
 
@@ -72,13 +83,16 @@ def create_server(
     port: int = 8765,
     allowed_hosts: tuple[str, ...] = (),
     allowed_origins: tuple[str, ...] = (),
+    approval_origin: str = "",
 ) -> XunjiMCP:
     loopback_hosts = [entry for name in LOOPBACK_NAMES for entry in (name, f"{name}:*")]
     server = XunjiMCP(
         api,
         "xunji-private-mcp",
         instructions=(
-            "按用户指定的日期和范围访问训记。写入工具会请求用户确认；"
+            "按用户指定的日期和范围访问训记。写入工具会请求用户确认。"
+            "若返回 approval_required，只把 approval_url 交给用户，由用户在浏览器核对并确认，"
+            "不要索取 Key 或代用户操作；"
             "请提供能让用户核对的记录或变更，不要推测食物营养或未知数据。"
         ),
         host=host,
@@ -89,6 +103,8 @@ def create_server(
             allowed_origins=[*allowed_origins, *(f"http://{entry}" for entry in loopback_hosts)],
         ),
     )
+    if approval_origin:
+        server.approvals = BrowserApprovals(api, approval_origin)
     for module in (training, food, body, templates):
         module.register_tools(server, api)
     return server
@@ -109,6 +125,7 @@ def main() -> None:
         allowed_origins = tuple(filter(None, map(str.strip, os.getenv("XUNJI_HTTP_ALLOWED_ORIGINS", "").split(","))))
         create_server(
             ApiClient(), host=args.host, port=args.port, allowed_hosts=allowed_hosts, allowed_origins=allowed_origins,
+            approval_origin=os.getenv("XUNJI_APPROVAL_BASE_URL", "").strip(),
         ).run(transport="streamable-http")
     else:
         create_server(ApiClient(load_stdio_keys())).run(transport="stdio")

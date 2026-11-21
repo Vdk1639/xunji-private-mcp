@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from xunji_private_mcp import templates, training
+from xunji_private_mcp import interaction, templates, training
 from xunji_private_mcp.interaction import ToolError
 from xunji_private_mcp.upstream import UpstreamError
 
@@ -23,8 +23,10 @@ def _setup(module, monkeypatch, *responses):
     tools = RecordedTools()
     call = AsyncMock(side_effect=responses)
     confirm = AsyncMock()
-    monkeypatch.setattr(module, "confirm", confirm)
-    module.register_tools(tools, SimpleNamespace(call=call, credential_scope=lambda route: "test-account"))
+    monkeypatch.setattr(interaction, "confirm", confirm)
+    module.register_tools(tools, SimpleNamespace(
+        call=call, credential_scope=lambda route: "test-account", wait_for_rate_limit=AsyncMock(),
+    ))
     return tools, call, confirm
 
 

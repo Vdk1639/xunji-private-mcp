@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from mcp.server.fastmcp import FastMCP
 
-from xunji_private_mcp import body, food
+from xunji_private_mcp import body, food, interaction
 from xunji_private_mcp.interaction import ToolError
 
 
@@ -56,7 +56,7 @@ def test_food_write_confirms_update_and_invalidates_read_cache(tools, monkeypatc
         for value in ('"id": 24', '"meal_type": "lunch"', "鸡胸肉", "150", '"unit": "g"'):
             assert value in summary
 
-    monkeypatch.setattr(food, "confirm", accept)
+    monkeypatch.setattr(interaction, "confirm", accept)
     asyncio.run(
         server.call_tool("upsert_food_records", {"foods": [record], "client_request_id": "retry-id"})
     )
@@ -70,7 +70,7 @@ def test_food_write_confirms_update_and_invalidates_read_cache(tools, monkeypatc
 def test_custom_food_validates_units_and_needs_confirmation(tools, monkeypatch):
     server, api = tools
     confirm = AsyncMock(side_effect=ToolError("declined"))
-    monkeypatch.setattr(food, "confirm", confirm)
+    monkeypatch.setattr(interaction, "confirm", confirm)
     arguments = {
         "name": "鸡胸肉",
         "ntr": {
@@ -138,7 +138,7 @@ def test_body_preview_must_be_confirmed_before_submission(tools, monkeypatch, ac
         if not accepted:
             raise ToolError("declined")
 
-    monkeypatch.setattr(body, "confirm", choose)
+    monkeypatch.setattr(interaction, "confirm", choose)
     args = {"records": records, "client_request_id": "retry-id"}
     if accepted:
         asyncio.run(server.call_tool("upsert_body_metrics", args))

@@ -1,0 +1,43 @@
+# Docker Compose 主配置 - 推荐用于生产部署
+# 支持：容器间通信 + 反向代理公网访问 + 宿主机调试
+
+services:
+  xunji-private-mcp:
+    build: .
+    image: xunji-private-mcp:local
+    container_name: xunji-private-mcp
+    environment:
+      # 允许的主机名（容器服务名 + 反代域名）
+      XUNJI_HTTP_ALLOWED_HOSTS: ${XUNJI_HTTP_ALLOWED_HOSTS:-xunji-private-mcp}
+      # 允许的来源（客户端容器或前端地址）
+      XUNJI_HTTP_ALLOWED_ORIGINS: ${XUNJI_HTTP_ALLOWED_ORIGINS:-}
+      # 浏览器审批基础 URL（公网反代地址或本地地址）
+      XUNJI_APPROVAL_BASE_URL: ${XUNJI_APPROVAL_BASE_URL:-}
+    # 默认：仅内部网络暴露（容器间通信）
+    expose:
+      - "8765"
+    # 如需宿主机访问（调试、SSH转发），取消下面的注释
+    # ports:
+    #   - "127.0.0.1:8765:8765"
+    networks:
+      - mcp-internal
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=5)\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  # 内部网络，供其他容器访问
+  mcp-internal:
+    driver: bridge
+    # 连接到外部网络，允许访问训记 API
+    internal: false
+    # 如果使用反向代理，需要连接到反代所在的网络
+    # external: true
+    # name: your-reverse-proxy-network

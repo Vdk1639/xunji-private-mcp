@@ -13,7 +13,7 @@
 
 按需配置客户端的环境变量或专用请求头。省略某个 Key 或将其留空，对应工具就不会出现在工具列表中，直接调用也会被拒绝。HTTP 兼容 `Authorization: Bearer <训记官方 Key>`。通用 Bearer 没有业务范围标记，服务会列出所有工具，对缺少专用请求头的调用交由训记验证。需要按已配置的 Key 精确启用工具时，只使用专用请求头。
 
-HTTP 客户端在初始化和后续请求中携带相同的凭据。服务逐请求从请求头读取 Key，用完整凭据组合绑定会话，并按接口和 Key 隔离缓存与限频。工具参数只包含业务数据。写入需要客户端支持 MCP 表单确认。饮食模板查询和套用等待官方请求字段公开。
+HTTP 客户端在初始化和后续请求中携带相同的凭据。服务逐请求从请求头读取 Key，用完整凭据组合绑定会话，并按接口和 Key 隔离缓存与限频。工具参数只包含业务数据。写入需要 MCP 表单确认或浏览器确认。饮食模板查询和套用等待官方请求字段公开。
 
 ## Windows 和 Linux
 
@@ -31,7 +31,7 @@ HTTP 客户端在初始化和后续请求中携带相同的凭据。服务逐请
 docker run -d --name xunji-private-mcp -p 127.0.0.1:8765:8765 --read-only --cap-drop ALL --security-opt no-new-privileges ghcr.io/vdk1639/xunji-private-mcp:<版本标签>
 ```
 
-公开部署时，在 HTTPS 反向代理后运行 MCP，只对外发布 `https://mcp.example.com/mcp`。代理应保留原始 `Host`、MCP 会话头、`Authorization` 和 `X-Xunji-*` 请求头，关闭 `/mcp` 的响应缓冲、缓存和请求头日志，并设置请求速率及连接数上限。允许客户端等待至少 180 秒以便完成写入确认。
+公开部署时，在 HTTPS 反向代理后运行 MCP，并发布 `https://mcp.example.com/mcp`。代理应保留原始 `Host`、MCP 会话头、`Authorization` 和 `X-Xunji-*` 请求头，关闭 `/mcp` 的响应缓冲、缓存和请求头日志，并设置请求速率及连接数上限。允许客户端等待至少 180 秒以便完成写入确认。
 
 在 Compose 同目录的 `.env` 中设置 `XUNJI_HTTP_ALLOWED_HOSTS=mcp.example.com`，再运行 `docker compose up -d --force-recreate`。原生部署设置同名进程环境变量，`docker run` 部署通过 `-e` 传入。若客户端发送 `Origin`，通过 `XUNJI_HTTP_ALLOWED_ORIGINS` 设置其完整来源，例如 `https://chat.example.com`。多个值用逗号分隔，保留 `Host` 和 `Origin` 校验。使用一个 HTTP 服务实例以维持 MCP 会话。
 
@@ -113,7 +113,9 @@ claude mcp add --scope user --transport http --header "X-Xunji-Train-Key: <TRAIN
 }
 ```
 
-当前 AstrBot MCP 客户端支持读取和工具发现。写入工具会在客户端不支持 MCP 表单确认时拒绝提交。
+**写入确认**。AstrBot 使用网页确认时选择 Streamable HTTP。在训记 MCP 的 Compose `.env` 或容器环境里设置 `XUNJI_APPROVAL_BASE_URL=https://mcp.example.com`，重建 MCP 容器。该地址须能在用户的浏览器打开，只填写站点地址。支持 HTTPS 和回环 HTTP，例如经 SSH 转发的 `http://127.0.0.1:8765`。反向代理需把 `/approve/` 和 `/mcp` 转发到同一 MCP 实例，并关闭 `/approve/` 的缓存、访问日志和请求体日志。
+
+AstrBot 可将工具返回的 `approval_url` 发给用户。用户在 **5 分钟内**打开自己的 MCP 确认页，输入对应业务的训记 API Key 查看摘要，然后点击确认或取消。提交结果显示在网页上。Key 在网页填写，避免发到聊天里。原生支持 MCP 表单的客户端继续使用原有确认流程。未启用网页确认时，AstrBot 的 Stdio 和不支持表单的 HTTP 客户端只能读取。
 
 ## 密钥轮换与故障处理
 

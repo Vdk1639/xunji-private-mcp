@@ -7,7 +7,7 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 
-from .interaction import ToolError, confirm
+from .interaction import ToolError, approve_write
 from .upstream import ApiClient
 
 TRAIN_SCHEMA = "train_open_api_v2"
@@ -137,6 +137,7 @@ def _validate_note(train: dict[str, Any]) -> bool:
 
 def register_tools(server: FastMCP, api: ApiClient) -> None:
     pending_days: set[tuple[str, date]] = set()
+    committing_days: set[tuple[str, date]] = set()
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
     async def get_training(datestr: date, include_full_data: bool = False) -> Any:
@@ -208,17 +209,29 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
                 preview.append({"新建": merged})
             merged["movements"] = _validated_movements(merged.get("movements"))
             payload.append(merged)
-        await confirm(ctx, "请确认写入以下训练记录：\n" + json.dumps(preview, ensure_ascii=False, indent=2))
-        if identifiers:
-            current = await training_index(day)
-            if any(current.get(str(identifier)) != originals[str(identifier)] for identifier in identifiers):
-                raise ToolError("确认期间原训练发生变化。请重新读取、提交并确认修改。")
-        return await api.call(
-            "training_write",
-            {"schema_version": TRAIN_SCHEMA, "client_request_id": client_request_id, "dry_run": False,
-             "include_full_data": True, "res": payload},
-            rate_scope=day.isoformat(),
-            invalidate=("training_read",),
+        async def submit():
+            pending = (api.credential_scope("training_write"), day)
+            if pending in committing_days:
+                raise ToolError("该日期已有训练写入正在提交，请稍后重新核对。")
+            committing_days.add(pending)
+            try:
+                if identifiers:
+                    await api.wait_for_rate_limit("training_read", f"{day}:True")
+                    current = await training_index(day)
+                    if any(current.get(str(identifier)) != originals[str(identifier)] for identifier in identifiers):
+                        raise ToolError("确认期间原训练发生变化。请重新读取、提交并确认修改。")
+                return await api.call(
+                    "training_write",
+                    {"schema_version": TRAIN_SCHEMA, "client_request_id": client_request_id, "dry_run": False,
+                     "include_full_data": True, "res": payload},
+                    rate_scope=day.isoformat(),
+                    invalidate=("training_read",),
+                )
+            finally:
+                committing_days.remove(pending)
+
+        return await approve_write(
+            ctx, "training_write", "请确认写入以下训练记录：\n" + json.dumps(preview, ensure_ascii=False, indent=2), submit,
         )
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))

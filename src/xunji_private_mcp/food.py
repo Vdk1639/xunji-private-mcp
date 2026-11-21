@@ -9,7 +9,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from .interaction import ToolError, confirm
+from .interaction import ToolError, approve_write
 from .upstream import ApiClient
 
 
@@ -105,19 +105,17 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         Reuse client_request_id if retrying the same request after an uncertain result.
         """
         records = [food.model_dump(mode="json", exclude_none=True) for food in foods]
-        await confirm(
-            ctx,
-            "确认新增或更新以下饮食记录（有 id 的记录将更新，ntr 为每 100 g 营养）：\n"
-            + json.dumps(records, ensure_ascii=False, indent=2),
-        )
-        return await api.call(
-            "food_write",
-            {
-                "client_request_id": client_request_id or str(uuid4()),
-                "dry_run": False,
-                "foods": records,
-            },
-            invalidate=("food_query",),
+        request_id = client_request_id or str(uuid4())
+
+        async def submit():
+            return await api.call(
+                "food_write", {"client_request_id": request_id, "dry_run": False, "foods": records},
+                invalidate=("food_query",),
+            )
+
+        return await approve_write(
+            ctx, "food_write", "确认新增或更新以下饮食记录（有 id 的记录将更新，ntr 为每 100 g 营养）：\n"
+            + json.dumps(records, ensure_ascii=False, indent=2), submit,
         )
 
     @server.tool(
@@ -156,12 +154,11 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
             ensure_ascii=False,
             indent=2,
         )
-        await confirm(ctx, f"确认保存以下自定义食物：\n{summary}")
-        return await api.call(
-            "food_custom",
-            {
-                "client_request_id": client_request_id or str(uuid4()),
-                "dry_run": False,
-                "food": food,
-            },
-        )
+        request_id = client_request_id or str(uuid4())
+
+        async def submit():
+            return await api.call(
+                "food_custom", {"client_request_id": request_id, "dry_run": False, "food": food},
+            )
+
+        return await approve_write(ctx, "food_custom", f"确认保存以下自定义食物：\n{summary}", submit)

@@ -1,0 +1,48 @@
+# Docker Compose 配置 - 容器间通信方案
+# 适用于将 MCP 服务部署在 Docker 网络内，供其他容器服务访问
+
+services:
+  xunji-private-mcp:
+    build: .
+    image: xunji-private-mcp:local
+    container_name: xunji-private-mcp
+    environment:
+      XUNJI_HTTP_ALLOWED_HOSTS: ${XUNJI_HTTP_ALLOWED_HOSTS:-xunji-private-mcp}
+      XUNJI_HTTP_ALLOWED_ORIGINS: ${XUNJI_HTTP_ALLOWED_ORIGINS:-}
+      XUNJI_APPROVAL_BASE_URL: ${XUNJI_APPROVAL_BASE_URL:-}
+    # 容器间通信：不映射到宿主机，仅在内部网络暴露
+    expose:
+      - "8765"
+    # 如需从宿主机访问（调试用），取消下面的注释
+    # ports:
+    #   - "127.0.0.1:8765:8765"
+    networks:
+      - mcp-internal
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=5)\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # 示例客户端服务（如 AstrBot）
+  # astrbot:
+  #   image: soulter/astrbot:latest
+  #   container_name: astrbot
+  #   environment:
+  #     # AstrBot 通过内部网络访问 MCP
+  #     MCP_SERVER_URL: http://xunji-private-mcp:8765/mcp
+  #   networks:
+  #     - mcp-internal
+  #   depends_on:
+  #     xunji-private-mcp:
+  #       condition: service_healthy
+
+networks:
+  mcp-internal:
+    driver: bridge
+    internal: false  # 设为 true 则完全隔离外网

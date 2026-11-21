@@ -7,7 +7,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from .interaction import ToolError, confirm
+from .interaction import ToolError, approve_write
 from .upstream import ApiClient
 
 
@@ -101,10 +101,12 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
             for record in records
         )
         summary = json.dumps(preview["summary"], ensure_ascii=False, indent=2)
-        await confirm(ctx, f"确认新增或更新以下身体指标：\n{changes}\n训记预检摘要：\n{summary}")
-        await api.wait_for_rate_limit("body_write")
-        return await api.call(
-            "body_write",
-            {**body, "dry_run": False, "confirmed": True},
-            invalidate=("body_query",),
+        async def submit():
+            await api.wait_for_rate_limit("body_write")
+            return await api.call(
+                "body_write", {**body, "dry_run": False, "confirmed": True}, invalidate=("body_query",),
+            )
+
+        return await approve_write(
+            ctx, "body_write", f"确认新增或更新以下身体指标：\n{changes}\n训记预检摘要：\n{summary}", submit,
         )

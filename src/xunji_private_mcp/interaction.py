@@ -1,8 +1,12 @@
 import asyncio
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from mcp.server.fastmcp import Context
 from mcp.server.fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
+
+from .credentials import REQUEST_KEYS
 
 
 class WriteApproval(BaseModel):
@@ -23,3 +27,17 @@ async def confirm(ctx: Context, summary: str) -> None:
 
     if result.action != "accept" or result.data.approve is not True:
         raise ToolError("用户未批准此次变更，未写入训记。")
+
+
+async def approve_write(
+    ctx: Context, route: str, summary: str, submit: Callable[[], Awaitable[Any]],
+) -> Any:
+    if REQUEST_KEYS.get() is not None:
+        browser = getattr(ctx.fastmcp, "approvals", None)
+        if browser is not None:
+            client = ctx.session.client_params
+            capability = client.capabilities.elicitation if client else None
+            if capability is None or capability.form is None:
+                return browser.stage(route, summary, submit)
+    await confirm(ctx, summary)
+    return await submit()
