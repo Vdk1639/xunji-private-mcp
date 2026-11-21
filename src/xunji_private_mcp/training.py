@@ -234,6 +234,38 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
             ctx, "training_write", "请确认写入以下训练记录：\n" + json.dumps(preview, ensure_ascii=False, indent=2), submit,
         )
 
+    @server.tool(annotations=ToolAnnotations(destructiveHint=True, idempotentHint=True, openWorldHint=True))
+    async def delete_training(ctx: Context, datestr: str, localid: int, client_request_id: str) -> dict[str, Any]:
+        """Delete a training record by localid. Note: Xunji upstream API does not provide a delete endpoint.
+
+        This tool is provided for API completeness but will return an error directing users to delete
+        records in the Xunji app. Attempted workarounds (empty movements array, clearing fields) are
+        rejected by the upstream API per the test report findings.
+
+        Args:
+            datestr: Training date in YYYY-MM-DD format
+            localid: Training record ID to delete
+            client_request_id: Unique client request ID for idempotency
+
+        Returns:
+            Error explaining that deletion must be performed in the Xunji app
+        """
+        try:
+            day = date.fromisoformat(datestr)
+        except (ValueError, TypeError):
+            raise ToolError("训练日期必须使用 YYYY-MM-DD 格式。") from None
+
+        today = _today()
+        if not _shift_months(today, -6) <= day <= _shift_months(today, 6):
+            raise ToolError("只能操作今天前后各 6 个月内的训练。")
+
+        # Provide clear error message as documented in test report
+        raise ToolError(
+            "训记官方 API 不提供训练记录删除接口。"
+            "测试验证显示，传空数组或清空 movements 等绕过方式均被 API 拒绝。"
+            f"请在训记 App 中手动删除日期 {datestr} 的训练记录 (localid: {localid})。"
+        )
+
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
     async def list_official_plans() -> Any:
         """List official PlatformPlan and UniversalPlan instances and their plan_ref values."""
