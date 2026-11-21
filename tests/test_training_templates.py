@@ -48,12 +48,6 @@ def test_training_update_preserves_times_unfinished_sets_and_note_metadata(monke
             {"name": "杠铃卧推", "key": "internal", "sets": [{"reps": "8", "done": False, "rpe": "7"}]}
         ],
     }
-
-
-def test_training_update_preserves_times_unfinished_sets_and_note_metadata(monkeypatch):
-    """Test that training updates preserve existing metadata."""
-    day = date(2026, 11, 20)
-    monkeypatch.setattr(training, "_today", lambda: day)
     snapshot = {"trains": [original]}
     tools, call = _setup(training, monkeypatch, snapshot, snapshot, {"trains": []})
     patch = {
@@ -76,6 +70,7 @@ def test_training_update_preserves_times_unfinished_sets_and_note_metadata(monke
             {"name": "杠铃卧推", "sets": [{"reps": "8", "done": False, "rpe": "7"}]}
         ],
     }
+
 
 
 def test_cardio_write_executes_directly_without_confirmation(monkeypatch):

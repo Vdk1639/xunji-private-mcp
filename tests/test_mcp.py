@@ -212,13 +212,13 @@ def test_http_lists_only_configured_scopes_and_rejects_unconfigured_calls():
             return http_result(response)
 
         diet = open_http_session(client, {KEY_HEADERS[FOOD]: "fake-diet", KEY_HEADERS[BODY]: ""})
-        assert list_tools(diet) == {"query_food_records", "upsert_food_records", "upsert_custom_food"}
+        assert list_tools(diet) == {"query_food_records", "upsert_food_records", "upsert_custom_food", "list_food_templates", "apply_food_template"}
         assert list_tools({name: value for name, value in diet.items() if name != KEY_HEADERS[BODY]}) == list_tools(diet)
 
         account = open_http_session(client, {KEY_HEADERS[name]: f"fake-{name}" for name in (TRAIN, FOOD, BODY, TEMPLATE)})
         assert list_tools(account) == {
             "get_training", "upsert_training", "list_official_plans", "get_official_plan",
-            "query_food_records", "upsert_food_records", "upsert_custom_food",
+            "query_food_records", "upsert_food_records", "upsert_custom_food", "list_food_templates", "apply_food_template",
             "query_body_metrics", "upsert_body_metrics", "sync_agent_templates", "mutate_agent_templates",
         }
 
