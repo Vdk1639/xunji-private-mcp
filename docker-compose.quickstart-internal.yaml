@@ -1,0 +1,71 @@
+# xunji-private-mcp 容器间通信快速部署
+# 适用于在 Docker 内部网络部署，供其他容器（如 AstrBot）访问
+#
+# 使用方法：
+#   docker compose -f docker-compose.quickstart-internal.yaml up -d
+#
+# 容器访问地址：
+#   http://xunji-private-mcp:8765/mcp
+#
+# 说明：
+#   - 服务不映射到宿主机端口，仅在内部网络暴露
+#   - 适合与 AstrBot 等客户端容器同网络部署
+#   - 如需从宿主机访问调试，取消下方 ports 注释
+
+services:
+  xunji-private-mcp:
+    image: ghcr.io/vdk1639/xunji-private-mcp:latest
+    container_name: xunji-private-mcp
+
+    # 容器间通信：仅在内部网络暴露
+    expose:
+      - "8765"
+
+    # 如需从宿主机访问（调试用），取消下面的注释
+    # ports:
+    #   - "127.0.0.1:8765:8765"
+
+    # 环境变量
+    environment:
+      XUNJI_HTTP_ALLOWED_HOSTS: ${XUNJI_HTTP_ALLOWED_HOSTS:-xunji-private-mcp}
+      XUNJI_HTTP_ALLOWED_ORIGINS: ${XUNJI_HTTP_ALLOWED_ORIGINS:-}
+      XUNJI_APPROVAL_BASE_URL: ${XUNJI_APPROVAL_BASE_URL:-}
+
+    # 连接到网络（与客户端容器相同的网络）
+    networks:
+      - mcp-internal
+
+    # 安全加固
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+    # 自动重启
+    restart: unless-stopped
+
+    # 健康检查
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=5)\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  mcp-internal:
+    driver: bridge
+    # 如需完全隔离外网，设置 internal: true
+    internal: false
+
+# 连接到现有客户端容器的网络：
+# 1. 查看客户端容器的网络名
+#    docker inspect <客户端容器名> --format '{{range $key, $value := .NetworkSettings.Networks}}{{$key}}{{end}}'
+#
+# 2. 修改上方 networks 部分为：
+#    networks:
+#      mcp-internal:
+#        external: true
+#        name: <客户端容器的网络名>
+#
+# 3. 或者启动后手动连接：
+#    docker network connect <客户端容器的网络名> xunji-private-mcp

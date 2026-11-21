@@ -23,25 +23,86 @@ HTTP 客户端在初始化和后续请求中携带相同的凭据。服务逐请
 - 单独启动 HTTP 服务时使用 `uv run --locked --no-dev xunji-private-mcp http`，本机端点为 `http://127.0.0.1:8765/mcp`。
 - 使用 GitHub Releases 下载的 wheel 时，执行 `uv tool install --python 3.12 ./<wheel 文件名>`。安装后可使用 `xunji-private-mcp stdio` 或 `xunji-private-mcp http`。
 
-## Docker 与公开部署
+## Docker 快速部署
 
-在仓库目录执行 `docker compose up -d --build`。Compose 默认仅将 `8765` 发布到宿主机回环地址。也可以使用对应版本的 GHCR 镜像。
+### 私有部署（推荐）
+
+无需克隆仓库，直接使用 GHCR 镜像部署：
 
 ```sh
-docker run -d --name xunji-private-mcp -p 127.0.0.1:8765:8765 --read-only --cap-drop ALL --security-opt no-new-privileges ghcr.io/vdk1639/xunji-private-mcp:<版本标签>
+# 使用 Docker Compose（推荐）
+curl -O https://raw.githubusercontent.com/Vdk1639/xunji-private-mcp/main/docker-compose.quickstart.yaml
+docker compose -f docker-compose.quickstart.yaml up -d
+
+# 或使用 Docker Run
+docker run -d \
+  --name xunji-private-mcp \
+  -p 127.0.0.1:8765:8765 \
+  --read-only --cap-drop ALL --security-opt no-new-privileges \
+  --restart unless-stopped \
+  ghcr.io/vdk1639/xunji-private-mcp:latest
 ```
 
-公开部署时，在 HTTPS 反向代理后运行 MCP，并发布 `https://mcp.example.com/mcp`。代理应保留原始 `Host`、MCP 会话头、`Authorization` 和 `X-Xunji-*` 请求头，关闭 `/mcp` 的响应缓冲、缓存和请求头日志，并设置请求速率及连接数上限。允许客户端等待至少 180 秒以便完成写入确认。
+**访问地址**：`http://127.0.0.1:8765/mcp`
 
-在 Compose 同目录的 `.env` 中设置 `XUNJI_HTTP_ALLOWED_HOSTS=mcp.example.com`，再运行 `docker compose up -d --force-recreate`。原生部署设置同名进程环境变量，`docker run` 部署通过 `-e` 传入。若客户端发送 `Origin`，通过 `XUNJI_HTTP_ALLOWED_ORIGINS` 设置其完整来源，例如 `https://chat.example.com`。多个值用逗号分隔，保留 `Host` 和 `Origin` 校验。使用一个 HTTP 服务实例以维持 MCP 会话。
+### 容器间通信（与 AstrBot 等容器集成）
 
-公开端点的部署者和 TLS 终止代理能接触请求中的训记 Key 和返回数据。只连接可信端点。每套客户端凭据可以访问对应训记数据。多人共用一个 AstrBot 实例时，其一份 MCP 配置会被使用该工具的对话共用，因此应限制工具的使用范围，或为不同用户分别配置客户端实例。
+```sh
+# 使用 Docker Compose（推荐）
+curl -O https://raw.githubusercontent.com/Vdk1639/xunji-private-mcp/main/docker-compose.quickstart-internal.yaml
+docker compose -f docker-compose.quickstart-internal.yaml up -d
 
-只需私下跨主机访问时，可通过 SSH 转发远端回环端口，客户端仍连接 `http://127.0.0.1:8765/mcp`。
+# 或连接到现有容器网络
+docker run -d \
+  --name xunji-private-mcp \
+  --network <客户端容器的网络名> \
+  --read-only --cap-drop ALL --security-opt no-new-privileges \
+  --restart unless-stopped \
+  ghcr.io/vdk1639/xunji-private-mcp:latest
+```
+
+**容器内访问地址**：`http://xunji-private-mcp:8765/mcp`
+
+详细配置见 [快速部署指南](docs/QUICKSTART.md) 和 [AstrBot 集成文档](docs/ASTRBOT_INTEGRATION.md)。
+
+### 从源码构建
+
+在仓库目录执行：
+
+```sh
+docker compose up -d --build
+```
+
+### ⚠️ 公网部署（不推荐）
+
+**强烈不推荐公网部署**。公网暴露 MCP 服务存在以下风险：
+
+- 🔓 请求中的训记 API Key 可能被代理、日志或监控系统记录
+- 👁️ MCP 端点部署者和 TLS 终止代理能接触所有请求和返回数据
+- 👥 多人共用同一客户端实例时，所有用户共享同一套 API Key
+- 🚨 需要妥善配置反向代理、速率限制、访问控制和日志脱敏
+
+**推荐替代方案**：
+
+- ✅ **私有部署**：仅绑定本地回环地址 `127.0.0.1:8765`
+- ✅ **SSH 隧道**：跨主机访问使用 SSH 端口转发
 
 ```sh
 ssh -N -L 127.0.0.1:8765:127.0.0.1:8765 user@server.example.com
 ```
+
+如果确实需要公网部署（例如团队内网或受控环境），**必须**：
+
+1. ✅ 配置 HTTPS 反向代理（Nginx/Caddy/Traefik）
+2. ✅ 禁用 `/mcp` 和 `/approve/` 的请求头日志（避免记录 API Key）
+3. ✅ 配置速率限制和连接数上限
+4. ✅ 限制访问来源（IP 白名单或基础认证）
+5. ✅ 设置 `XUNJI_HTTP_ALLOWED_HOSTS` 为你的域名
+6. ✅ 定期轮换训记 API Key
+
+详细配置见 [反向代理文档](docs/REVERSE_PROXY.md)。
+
+公开端点的部署者和 TLS 终止代理能接触请求中的训记 Key 和返回数据。只连接可信端点。每套客户端凭据可以访问对应训记数据。多人共用一个 AstrBot 实例时，其一份 MCP 配置会被使用该工具的对话共用，因此应限制工具的使用范围，或为不同用户分别配置客户端实例。
 
 ## 客户端配置
 

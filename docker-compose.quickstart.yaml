@@ -1,0 +1,57 @@
+# xunji-private-mcp 快速部署配置
+# 无需克隆仓库，直接使用 GHCR 镜像部署
+#
+# 私有部署（推荐）：
+#   docker compose -f docker-compose.quickstart.yaml up -d
+#
+# 使用方法：
+#   1. 下载此文件到任意目录
+#   2. 在同目录创建 .env 文件配置环境变量（见下方）
+#   3. 运行上述命令启动服务
+#
+# 私有部署访问地址：
+#   - 宿主机：http://127.0.0.1:8765/mcp
+#   - 容器间：http://xunji-private-mcp:8765/mcp
+
+services:
+  xunji-private-mcp:
+    image: ghcr.io/vdk1639/xunji-private-mcp:latest
+    container_name: xunji-private-mcp
+
+    # 私有部署：仅绑定到本地回环地址
+    ports:
+      - "127.0.0.1:8765:8765"
+
+    # 环境变量（可选，用于安全配置）
+    environment:
+      # 允许的主机名（默认：xunji-private-mcp）
+      # 私有部署通常不需要修改
+      XUNJI_HTTP_ALLOWED_HOSTS: ${XUNJI_HTTP_ALLOWED_HOSTS:-xunji-private-mcp}
+
+      # 允许的来源（默认：空，允许所有）
+      # 如果需要限制客户端来源，设置为客户端地址
+      XUNJI_HTTP_ALLOWED_ORIGINS: ${XUNJI_HTTP_ALLOWED_ORIGINS:-}
+
+      # 浏览器审批基础 URL（默认：空，不使用浏览器审批）
+      # 私有部署可设置为 http://127.0.0.1:8765
+      XUNJI_APPROVAL_BASE_URL: ${XUNJI_APPROVAL_BASE_URL:-}
+
+    # 安全加固
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+    # 自动重启
+    restart: unless-stopped
+
+    # 健康检查
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=5)\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# .env 文件示例（私有部署通常不需要创建）：
+# XUNJI_HTTP_ALLOWED_HOSTS=xunji-private-mcp
+# XUNJI_APPROVAL_BASE_URL=http://127.0.0.1:8765
