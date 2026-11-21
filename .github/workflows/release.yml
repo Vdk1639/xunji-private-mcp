@@ -39,7 +39,9 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+            ${{ steps.image.outputs.name }}:latest
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
       - name: Publish GitHub release
         env:
