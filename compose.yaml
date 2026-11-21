@@ -4,7 +4,8 @@ services:
     image: xunji-private-mcp:local
     container_name: xunji-private-mcp
     environment:
-      XUNJI_HTTP_ALLOWED_HOSTS: ${XUNJI_HTTP_ALLOWED_HOSTS:-}
+      # 预配置常见的容器名和端口组合，支持容器间通信
+      XUNJI_HTTP_ALLOWED_HOSTS: ${XUNJI_HTTP_ALLOWED_HOSTS:-xunji-private-mcp,xunji-private-mcp:8765}
       XUNJI_HTTP_ALLOWED_ORIGINS: ${XUNJI_HTTP_ALLOWED_ORIGINS:-}
       XUNJI_APPROVAL_BASE_URL: ${XUNJI_APPROVAL_BASE_URL:-}
     ports:

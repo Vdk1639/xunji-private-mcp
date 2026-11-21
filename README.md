@@ -63,7 +63,9 @@ docker run -d \
 
 **容器内访问地址**：`http://xunji-private-mcp:8765/mcp`
 
-详细配置见 [快速部署指南](docs/QUICKSTART.md) 和 [AstrBot 集成文档](docs/ASTRBOT_INTEGRATION.md)。
+**配置 AstrBot**：详见 [AstrBot 部署指南](docs/ASTRBOT_DEPLOYMENT.md)（包含 AI Agent 自动部署提示词）
+
+更多配置见 [快速部署指南](docs/QUICKSTART.md) 和 [AstrBot 集成文档](docs/ASTRBOT_INTEGRATION.md)。
 
 ### 从源码构建
 

@@ -34,6 +34,12 @@
 
 ### 集成指南
 
+- **[ASTRBOT_DEPLOYMENT.md](ASTRBOT_DEPLOYMENT.md)** - AstrBot 部署快速指南 ⭐ **新用户推荐**
+  - AI Agent 自动部署提示词（最简单）
+  - 手动部署步骤详解
+  - Docker Compose 集成示例
+  - 完整故障排查指南
+
 - **[ASTRBOT_INTEGRATION.md](ASTRBOT_INTEGRATION.md)** - AstrBot 集成指南
   - 三种网络连接方案
   - MCP 完整配置示例
@@ -80,7 +86,8 @@
 ### AstrBot 用户
 
 1. **[QUICKSTART.md - 容器间通信](QUICKSTART.md#容器间通信部署与-astrbot-等容器集成)** - 部署 MCP 服务
-2. **[ASTRBOT_INTEGRATION.md](ASTRBOT_INTEGRATION.md)** - 配置 AstrBot MCP
+2. **[ASTRBOT_DEPLOYMENT.md](ASTRBOT_DEPLOYMENT.md)** - 最简单：使用 AI Agent 自动部署 ⭐ 或查看手动步骤
+3. **[ASTRBOT_INTEGRATION.md](ASTRBOT_INTEGRATION.md)** - 进阶配置和最佳实践
 
 ### 公网部署（不推荐）
 
