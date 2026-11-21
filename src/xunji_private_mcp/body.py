@@ -7,7 +7,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from .interaction import ToolError, approve_write
+from .exceptions import ToolError
 from .upstream import ApiClient
 
 
@@ -78,7 +78,7 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         ctx: Context,
         client_request_id: RequestId | None = None,
     ) -> Any:
-        """Preview and confirm adding or updating body metrics by date and type.
+        """Add or update body metrics by date and type.
 
         Use kg for weight, % for bodyfat, and cm for circumference or size. Reuse client_request_id
         if retrying the same request after an uncertain result.
@@ -95,18 +95,8 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         preview = await api.call("body_write", {**body, "dry_run": True})
         if not isinstance(preview, dict) or preview.get("summary") is None:
             raise ToolError("训记未返回身体数据预检摘要，写入已停止。")
-        unit_by_type = {"weight": "kg", "bodyfat": "%"}
-        changes = "\n".join(
-            f"{record.datestr} · {record.type} · {record.value} {unit_by_type.get(record.type, 'cm')}"
-            for record in records
-        )
-        summary = json.dumps(preview["summary"], ensure_ascii=False, indent=2)
-        async def submit():
-            await api.wait_for_rate_limit("body_write")
-            return await api.call(
-                "body_write", {**body, "dry_run": False, "confirmed": True}, invalidate=("body_query",),
-            )
 
-        return await approve_write(
-            ctx, "body_write", f"确认新增或更新以下身体指标：\n{changes}\n训记预检摘要：\n{summary}", submit,
+        await api.wait_for_rate_limit("body_write")
+        return await api.call(
+            "body_write", {**body, "dry_run": False, "confirmed": True}, invalidate=("body_query",),
         )

@@ -136,8 +136,8 @@ def test_successful_write_invalidates_only_its_credential_reads(monkeypatch):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("action,approved", [(None, False), ("decline", False), ("accept", False), ("accept", True)])
-def test_real_mcp_confirmation_gate(action, approved):
+def test_real_mcp_direct_write_execution():
+    """Test that writes execute directly without approval."""
     writes = []
 
     def respond(request):
@@ -145,10 +145,6 @@ def test_real_mcp_confirmation_gate(action, approved):
         if not data["dry_run"]:
             writes.append(data)
         return httpx.Response(200, json={"success": True, "res": {"summary": "72.4 kg"}})
-
-    async def elicit(context, params):
-        assert "72.4" in params.message
-        return types.ElicitResult(action=action, content={"approve": approved} if action == "accept" else None)
 
     async def run():
         api = ApiClient({BODY: "fake-key"}, httpx.MockTransport(respond))
@@ -158,16 +154,15 @@ def test_real_mcp_confirmation_gate(action, approved):
 
         api.call = call
         server = create_server(api)
-        async with create_connected_server_and_client_session(server, elicitation_callback=elicit if action else None) as session:
+        async with create_connected_server_and_client_session(server) as session:
             assert any(tool.name == "upsert_body_metrics" for tool in (await session.list_tools()).tools)
             result = await session.call_tool("upsert_body_metrics", {
                 "records": [{"datestr": "2026-06-28", "type": "weight", "value": 72.4}],
                 "client_request_id": "test-request",
             })
-            assert result.isError is (not approved)
-        assert len(writes) == int(approved)
-        if approved:
-            assert writes[0]["confirmed"] is True
+            assert not result.isError
+        assert len(writes) == 1
+        assert writes[0]["confirmed"] is True
 
     asyncio.run(run())
 
@@ -193,72 +188,6 @@ def http_result(response):
     assert response.status_code == 200
     data = next(line.removeprefix("data: ") for line in response.text.splitlines() if line.startswith("data: "))
     return json.loads(data)["result"]
-
-
-def test_http_browser_approval_requires_account_and_consumes_link(monkeypatch):
-    import re
-    from urllib.parse import urlsplit
-
-    from xunji_private_mcp import approval
-
-    writes = []
-    now = 100.0
-    monkeypatch.setattr(approval, "monotonic", lambda: now)
-
-    def respond(request):
-        writes.append((request.headers["Authorization"], json.loads(request.content)))
-        return httpx.Response(200, json={"success": True, "res": {"saved": True}})
-
-    origin = "http://127.0.0.1:8765"
-    app = create_server(ApiClient(transport=httpx.MockTransport(respond)), approval_origin=origin).streamable_http_app()
-    with TestClient(app, base_url=origin) as client:
-        headers = open_http_session(client, {KEY_HEADERS[FOOD]: "correct-key"})
-        arguments = {
-            "name": "<script>review me</script>",
-            "ntr": {"cal": 165, "protein": 31, "fat": 3.6, "carb": 0},
-            "nutrition_source": "package label",
-        }
-
-        def stage():
-            result = http_result(client.post("/mcp", headers=headers, json={
-                "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
-                    "name": "upsert_custom_food", "arguments": arguments,
-                },
-            }))
-            payload = result.get("structuredContent") or json.loads(result["content"][0]["text"])
-            assert payload["status"] == "approval_required"
-            return urlsplit(payload["approval_url"]).path
-
-        def review(path):
-            page = client.post(path, headers={"Origin": origin}, data={"action": "review", "key": "correct-key"})
-            assert page.status_code == 200
-            assert "&lt;script&gt;review me&lt;/script&gt;" in page.text
-            assert "correct-key" not in page.text
-            return re.search(r'name="review_token" value="([\w-]+)"', page.text)[1]
-
-        path = stage()
-        page = client.get(path)
-        assert page.headers["Cache-Control"] == "no-store"
-        assert "review me" not in page.text
-        assert client.post(path, data={"action": "review", "key": "correct-key"}).status_code == 403
-        assert client.post(path, headers={"Origin": origin}, data={"action": "review", "key": "wrong-key"}).status_code == 403
-        assert client.post(path, headers={"Origin": origin}, data={"action": "approve"}).status_code == 403
-        proof = review(path)
-        assert writes == []
-        assert client.post(path, headers={"Origin": origin}, data={"action": "approve", "review_token": proof}).status_code == 200
-        assert client.post(path, headers={"Origin": origin}, data={"action": "approve", "review_token": proof}).status_code == 404
-        assert writes[0][0] == "Bearer correct-key"
-        assert writes[0][1]["food"]["name"] == arguments["name"]
-        assert writes[0][1]["dry_run"] is False
-
-        canceled = stage()
-        proof = review(canceled)
-        assert client.post(canceled, headers={"Origin": origin}, data={"action": "cancel", "review_token": proof}).status_code == 200
-        assert client.get(canceled).status_code == 404
-        expired = stage()
-        now += approval.TTL + 1
-        assert client.get(expired).status_code == 404
-        assert len(writes) == 1
 
 
 def test_http_lists_only_configured_scopes_and_rejects_unconfigured_calls():
@@ -288,7 +217,7 @@ def test_http_lists_only_configured_scopes_and_rejects_unconfigured_calls():
 
         account = open_http_session(client, {KEY_HEADERS[name]: f"fake-{name}" for name in (TRAIN, FOOD, BODY, TEMPLATE)})
         assert list_tools(account) == {
-            "get_training", "upsert_training", "delete_training", "list_official_plans", "get_official_plan",
+            "get_training", "upsert_training", "list_official_plans", "get_official_plan",
             "query_food_records", "upsert_food_records", "upsert_custom_food",
             "query_body_metrics", "upsert_body_metrics", "sync_agent_templates", "mutate_agent_templates",
         }

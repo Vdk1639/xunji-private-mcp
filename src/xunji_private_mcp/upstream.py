@@ -10,7 +10,7 @@ import httpx
 from .credentials import (
     AUTHORIZATION, BODY, FOOD, FOOD_SEARCH, KEY_HEADERS, REQUEST_KEYS, TEMPLATE, TRAIN, fingerprint, valid_key,
 )
-from .interaction import ToolError
+from .exceptions import ToolError
 
 MAX_CACHE_ENTRIES = 256
 MAX_RATE_BUCKETS = 4096

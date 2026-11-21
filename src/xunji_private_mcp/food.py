@@ -9,7 +9,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from .interaction import ToolError, approve_write
+from .exceptions import ToolError
 from .upstream import ApiClient
 
 
@@ -98,7 +98,7 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         ctx: Context,
         client_request_id: Text | None = None,
     ) -> Any:
-        """Add or update food records after user confirmation. Supply the record id for updates.
+        """Add or update food records. Supply the record id for updates.
 
         Obtain uniquekey, per-100g ntr and any units from official search or the saved custom food.
         Ask the user to resolve uncertain food matches, meal types, amounts or units.
@@ -106,16 +106,9 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         """
         records = [food.model_dump(mode="json", exclude_none=True) for food in foods]
         request_id = client_request_id or str(uuid4())
-
-        async def submit():
-            return await api.call(
-                "food_write", {"client_request_id": request_id, "dry_run": False, "foods": records},
-                invalidate=("food_query",),
-            )
-
-        return await approve_write(
-            ctx, "food_write", "确认新增或更新以下饮食记录（有 id 的记录将更新，ntr 为每 100 g 营养）：\n"
-            + json.dumps(records, ensure_ascii=False, indent=2), submit,
+        return await api.call(
+            "food_write", {"client_request_id": request_id, "dry_run": False, "foods": records},
+            invalidate=("food_query",),
         )
 
     @server.tool(
@@ -132,7 +125,7 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         uniquekey: Text | None = None,
         client_request_id: Text | None = None,
     ) -> Any:
-        """Save a custom food after user confirmation. Use a custom food when official search
+        """Save a custom food. Use a custom food when official search
         has no suitable match or the user requests one. For updates, supply its existing uniquekey.
 
         Provide a real nutrition source and known kcal, protein, fat and carbohydrate per 100 g.
@@ -155,10 +148,6 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
             indent=2,
         )
         request_id = client_request_id or str(uuid4())
-
-        async def submit():
-            return await api.call(
-                "food_custom", {"client_request_id": request_id, "dry_run": False, "food": food},
-            )
-
-        return await approve_write(ctx, "food_custom", f"确认保存以下自定义食物：\n{summary}", submit)
+        return await api.call(
+            "food_custom", {"client_request_id": request_id, "dry_run": False, "food": food},
+        )

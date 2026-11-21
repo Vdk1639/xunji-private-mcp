@@ -5,7 +5,7 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 
-from .interaction import ToolError, approve_write
+from .exceptions import ToolError
 from .upstream import ApiClient, UpstreamError
 
 MAX_TEMPLATES = 14
@@ -184,26 +184,21 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
 
         if len(versions) - len(deletes) + len(new_clients) > MAX_TEMPLATES:
             raise ToolError("Agent 文件夹最多保存 14 个模板。请明确选择要替换的模板后再提交。")
-        async def submit():
-            try:
-                return await api.call("template_mutate", {**payload, "confirmed": True})
-            except UpstreamError as error:
-                if error.code != "version_conflict":
-                    raise
-                try:
-                    latest = await sync_agent_templates()
-                except ToolError:
-                    raise ToolError("训记报告模板版本冲突，重新同步失败。请同步后再发起并确认修改。") from None
-                revisions = {template_id: latest["template_versions"].get(template_id) for template_id in sorted(affected)}
-                if folder_update is not None:
-                    latest_folder = latest.get("folder")
-                    revisions["文件夹"] = latest_folder.get("version") if isinstance(latest_folder, dict) else None
-                raise ToolError(
-                    "训记报告版本冲突。已重新同步，修改未提交。请重新查看、提交并确认修改。当前版本："
-                    + json.dumps(revisions, ensure_ascii=False)
-                ) from None
 
-        return await approve_write(
-            ctx, "template_mutate", "请确认在 Agent 文件夹中应用以下修改：\n"
-            + json.dumps(preview, ensure_ascii=False, indent=2), submit,
-        )
+        try:
+            return await api.call("template_mutate", {**payload, "confirmed": True})
+        except UpstreamError as error:
+            if error.code != "version_conflict":
+                raise
+            try:
+                latest = await sync_agent_templates()
+            except ToolError:
+                raise ToolError("训记报告模板版本冲突，重新同步失败。请同步后再发起并确认修改。") from None
+            revisions = {template_id: latest["template_versions"].get(template_id) for template_id in sorted(affected)}
+            if folder_update is not None:
+                latest_folder = latest.get("folder")
+                revisions["文件夹"] = latest_folder.get("version") if isinstance(latest_folder, dict) else None
+            raise ToolError(
+                "训记报告版本冲突。已重新同步，修改未提交。请重新查看、提交并确认修改。当前版本："
+                + json.dumps(revisions, ensure_ascii=False)
+            ) from None

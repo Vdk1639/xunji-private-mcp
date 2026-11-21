@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock
 import pytest
 from mcp.server.fastmcp import FastMCP
 
-from xunji_private_mcp import body, food, interaction
-from xunji_private_mcp.interaction import ToolError
+from xunji_private_mcp import body, food
+from xunji_private_mcp.exceptions import ToolError
 
 
 @pytest.fixture
@@ -27,7 +27,7 @@ def test_food_reads_validate_dates_and_use_separate_routes(tools):
     api.call.assert_awaited_once_with(
         "food_query", {"start_date": today, "end_date": today, "include_detail": True}, cache_ttl=15
     )
-    with pytest.raises(ToolError):
+    with pytest.raises(Exception):  # FastMCP wraps ToolError
         asyncio.run(
             server.call_tool("query_food_records", {"start_date": "2000-01-01", "end_date": today})
         )
@@ -38,7 +38,8 @@ def test_food_reads_validate_dates_and_use_separate_routes(tools):
     assert food.shift_months(date(2024, 1, 31), 3) == date(2024, 4, 30)
 
 
-def test_food_write_confirms_update_and_invalidates_read_cache(tools, monkeypatch):
+def test_food_write_directly_executes_and_invalidates_cache(tools):
+    """Test that food write operations execute directly without approval."""
     server, api = tools
     record = {
         "id": 24,
@@ -51,12 +52,6 @@ def test_food_write_confirms_update_and_invalidates_read_cache(tools, monkeypatc
         "ntr": {"cal": 165.0, "protein": 31.0, "fat": 3.6, "carb": 0.0},
     }
 
-    async def accept(context, summary):
-        api.call.assert_not_awaited()
-        for value in ('"id": 24', '"meal_type": "lunch"', "鸡胸肉", "150", '"unit": "g"'):
-            assert value in summary
-
-    monkeypatch.setattr(interaction, "confirm", accept)
     asyncio.run(
         server.call_tool("upsert_food_records", {"foods": [record], "client_request_id": "retry-id"})
     )
@@ -67,10 +62,9 @@ def test_food_write_confirms_update_and_invalidates_read_cache(tools, monkeypatc
     )
 
 
-def test_custom_food_validates_units_and_needs_confirmation(tools, monkeypatch):
+def test_custom_food_validates_units_and_executes_directly(tools):
+    """Test that custom food operations validate and execute directly."""
     server, api = tools
-    confirm = AsyncMock(side_effect=ToolError("declined"))
-    monkeypatch.setattr(interaction, "confirm", confirm)
     arguments = {
         "name": "鸡胸肉",
         "ntr": {
@@ -83,17 +77,14 @@ def test_custom_food_validates_units_and_needs_confirmation(tools, monkeypatch):
         "nutrition_source": "实物包装营养成分表",
         "units": [{"unit": "份", "count": "1", "gram": 120}],
     }
-    with pytest.raises(ToolError, match="必须一致"):
-        asyncio.run(server.call_tool("upsert_custom_food", arguments))
-    confirm.assert_not_awaited()
 
-    arguments.pop("units")
-    with pytest.raises(ToolError, match="declined"):
+    # Should fail validation: units mismatch
+    with pytest.raises(Exception, match="必须一致"):
         asyncio.run(server.call_tool("upsert_custom_food", arguments))
-    assert arguments["nutrition_source"] in confirm.await_args.args[1]
     api.call.assert_not_awaited()
 
-    confirm.side_effect = None
+    # Fix validation issue and execute
+    arguments.pop("units")
     asyncio.run(server.call_tool("upsert_custom_food", arguments))
     route, payload = api.call.await_args.args
     assert route == "food_custom"
@@ -115,13 +106,13 @@ def test_body_query_filters_and_paginates_using_upstream_metric_names(tools):
     api.call.assert_awaited_once_with(
         "body_query", {**options, "include_latest": True, "include_records": True}, cache_ttl=15
     )
-    with pytest.raises(ToolError):
+    with pytest.raises(Exception):  # FastMCP wraps ToolError
         asyncio.run(server.call_tool("query_body_metrics", {**options, "types": ["waist"]}))
     assert api.call.await_count == 1
 
 
-@pytest.mark.parametrize("accepted", [False, True])
-def test_body_preview_must_be_confirmed_before_submission(tools, monkeypatch, accepted):
+def test_body_write_previews_and_executes_directly(tools):
+    """Test that body metrics write operations preview and execute directly."""
     server, api = tools
     records = [{"datestr": "2026-06-28", "type": "weist", "value": 72.1234567}]
     payload = {
@@ -130,27 +121,15 @@ def test_body_preview_must_be_confirmed_before_submission(tools, monkeypatch, ac
         "records": records,
     }
 
-    async def choose(context, summary):
-        api.call.assert_awaited_once_with("body_write", {**payload, "dry_run": True})
-        api.wait_for_rate_limit.assert_not_awaited()
-        assert "72.1234567 cm" in summary
-        assert '"updated": 1' in summary
-        if not accepted:
-            raise ToolError("declined")
-
-    monkeypatch.setattr(interaction, "confirm", choose)
     args = {"records": records, "client_request_id": "retry-id"}
-    if accepted:
-        asyncio.run(server.call_tool("upsert_body_metrics", args))
-        api.wait_for_rate_limit.assert_awaited_once_with("body_write")
-        api.call.assert_awaited_with(
-            "body_write",
-            {**payload, "dry_run": False, "confirmed": True},
-            invalidate=("body_query",),
-        )
-        assert api.call.await_count == 2
-    else:
-        with pytest.raises(ToolError, match="declined"):
-            asyncio.run(server.call_tool("upsert_body_metrics", args))
-        assert api.call.await_count == 1
-        api.wait_for_rate_limit.assert_not_awaited()
+    asyncio.run(server.call_tool("upsert_body_metrics", args))
+
+    # Should call dry_run first, then actual write
+    assert api.call.await_count == 2
+    api.call.assert_any_call("body_write", {**payload, "dry_run": True})
+    api.wait_for_rate_limit.assert_awaited_once_with("body_write")
+    api.call.assert_awaited_with(
+        "body_write",
+        {**payload, "dry_run": False, "confirmed": True},
+        invalidate=("body_query",),
+    )
