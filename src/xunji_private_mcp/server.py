@@ -86,6 +86,15 @@ def create_server(
     approval_origin: str = "",
 ) -> XunjiMCP:
     loopback_hosts = [entry for name in LOOPBACK_NAMES for entry in (name, f"{name}:*")]
+
+    # If allowed_hosts contains "*", disable DNS rebinding protection
+    if "*" in allowed_hosts:
+        enable_dns_protection = False
+        final_allowed_hosts = []
+    else:
+        enable_dns_protection = True
+        final_allowed_hosts = [*allowed_hosts, *loopback_hosts]
+
     server = XunjiMCP(
         api,
         "xunji-private-mcp",
@@ -98,8 +107,8 @@ def create_server(
         host=host,
         port=port,
         transport_security=TransportSecuritySettings(
-            enable_dns_rebinding_protection=True,
-            allowed_hosts=[*allowed_hosts, *loopback_hosts],
+            enable_dns_rebinding_protection=enable_dns_protection,
+            allowed_hosts=final_allowed_hosts,
             allowed_origins=[*allowed_origins, *(f"http://{entry}" for entry in loopback_hosts)],
         ),
     )

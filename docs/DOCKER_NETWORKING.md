@@ -116,7 +116,7 @@ XUNJI_APPROVAL_BASE_URL=https://mcp.example.com
 
 | 变量 | 说明 | 示例 |
 |------|------|------|
-| `XUNJI_HTTP_ALLOWED_HOSTS` | 允许的主机名（逗号分隔），用于 DNS 重绑定保护 | `xunji-private-mcp,mcp.example.com` |
+| `XUNJI_HTTP_ALLOWED_HOSTS` | 允许的主机名（逗号分隔），用于 DNS 重绑定保护。使用 `*` 禁用保护（不推荐用于生产） | `xunji-private-mcp,mcp.example.com` 或 `*` |
 | `XUNJI_HTTP_ALLOWED_ORIGINS` | 允许的跨域来源（逗号分隔） | `http://astrbot:8080` |
 | `XUNJI_APPROVAL_BASE_URL` | 浏览器审批确认页的基础地址 | `http://127.0.0.1:8765` |
 
