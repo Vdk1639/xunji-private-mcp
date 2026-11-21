@@ -17,6 +17,12 @@ HTTP 客户端在初始化和后续请求中携带相同的凭据。服务逐请
 
 ## ⚠️ 重要提示
 
+### 食物搜索功能
+
+食物搜索功能(`search_official_food`工具)需要单独的搜索凭据。只有配置了 `XUNJI_FOOD_SEARCH_KEY`(Stdio)或 `X-Xunji-Food-Search-Key`(HTTP)时,该工具才会出现在工具列表中。
+
+普通饮食记录查询(`query_food_records`)、写入(`upsert_food_records`)和自定义食物(`upsert_custom_food`)仅需要饮食Key(`XUNJI_FOOD_KEY`)。
+
 ### 验证写入结果
 
 写入训练后必须使用 `include_full_data=true` 验证。lite 模式（`include_full_data=false`）可能不返回未完成的训练，这是上游训记 API 的行为特性，MCP 无法在客户端修复。

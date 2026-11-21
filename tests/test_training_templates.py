@@ -160,6 +160,8 @@ def test_official_plan_date_boundaries(monkeypatch):
     assert call.await_args.kwargs["rate_scope"] == "get:universal:155"
 
 
+
+
 def _snapshot(count=1, version=2):
     """Create template snapshot fixture."""
     movement = [

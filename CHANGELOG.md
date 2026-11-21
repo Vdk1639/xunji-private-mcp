@@ -7,22 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- **饮食模板功能**：
-  - `list_food_templates` - 列出用户保存的饮食模板
-  - `apply_food_template` - 将饮食模板套用到指定日期
+## [0.3.7] - 2026-11-22
 
 ### Changed
 
-- **工具总数**：从 11 增加到 13
 - **文档改进**：
-  - 添加关于 lite 模式行为的注意事项
-  - 移除关于"等待字段公开"的过时说明
+  - 在 `get_training` 工具说明中明确 lite 模式的限制
+  - 在 README 中新增"食物搜索功能"章节,说明 `search_official_food` 需要单独的搜索凭据
+  - 优化文档结构,将重要提示分为两个小节
 
-### Fixed
+### Notes
 
-- **get_training 文档**：补充说明 lite 模式可能不返回未完成训练的原因
+- 根据功能测试报告,食物搜索工具(`search_official_food`)已在代码中实现,但需要单独配置 `XUNJI_FOOD_SEARCH_KEY`
+- lite 模式不返回未完成训练的问题是上游 API 行为,无法在 MCP 层面修复
 
 ## [0.3.6] - 2026-11-22
 

@@ -141,7 +141,11 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
     async def get_training(datestr: date, include_full_data: bool = False) -> Any:
-        """Get training for one day. Use full data for heart rate, rest times, RPE and unfinished sets."""
+        """Get training for one day. Use full data for heart rate, rest times, RPE and unfinished sets.
+
+        Note: lite mode (include_full_data=false) may not return unfinished trainings due to upstream API behavior.
+        Always use include_full_data=true to verify writes.
+        """
         seconds = 30 if include_full_data else 15
         return await api.call(
             "training_read",
