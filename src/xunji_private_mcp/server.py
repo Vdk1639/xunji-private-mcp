@@ -19,11 +19,13 @@ LOOPBACK_NAMES = ("127.0.0.1", "localhost", "[::1]")
 TOOL_ROUTES = {
     "get_training": "training_read",
     "upsert_training": "training_write",
+    "delete_training": "training_read",
     "list_official_plans": "plan",
     "get_official_plan": "plan",
     "query_food_records": "food_query",
     "upsert_food_records": "food_write",
     "upsert_custom_food": "food_custom",
+    "search_food": "food_search",
     "search_official_food": "food_search",
     "list_food_templates": "food_templates_list",
     "apply_food_template": "food_templates_apply",

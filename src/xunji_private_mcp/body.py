@@ -42,8 +42,8 @@ class BodyRecord(BaseModel):
 def register_tools(server: FastMCP, api: ApiClient) -> None:
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
     async def query_body_metrics(
-        start_date: date,
-        end_date: date,
+        start_date: Annotated[date, Field(description="查询范围起始日期，格式 YYYY-MM-DD。范围必须在过去一年至未来三个月之间（以调用时为准），且 start_date <= end_date。")],
+        end_date: Annotated[date, Field(description="查询范围结束日期，格式 YYYY-MM-DD。范围必须在过去一年至未来三个月之间（以调用时为准），且 start_date <= end_date。")],
         types: Annotated[list[BodyMetric], Field(min_length=1)] | None = None,
         include_latest: bool = True,
         include_records: bool = True,
@@ -77,11 +77,14 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         records: Annotated[list[BodyRecord], Field(min_length=1)],
         ctx: Context,
         client_request_id: RequestId | None = None,
+        dry_run: bool = False,
     ) -> Any:
         """Add or update body metrics by date and type.
 
         Use kg for weight, % for bodyfat, and cm for circumference or size. Reuse client_request_id
         if retrying the same request after an uncertain result.
+
+        预演模式。为 true 时返回变更摘要但不实际写入；为 false 时执行真实写入。建议先用 dry_run: true 获取 res.summary，展示给用户确认后，再用 dry_run: false 执行真实操作。
         """
         if len({(record.datestr, record.type) for record in records}) != len(records):
             raise ToolError("每个日期和身体指标组合只能提交一次。")
@@ -92,11 +95,11 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
             "client_request_id": client_request_id or str(uuid4()),
             "records": [record.model_dump(mode="json") for record in records],
         }
-        preview = await api.call("body_write", {**body, "dry_run": True})
+        preview = await api.call("body_write", {**body, "dry_run": dry_run})
         if not isinstance(preview, dict) or preview.get("summary") is None:
             raise ToolError("训记未返回身体数据预检摘要，写入已停止。")
 
         await api.wait_for_rate_limit("body_write")
         return await api.call(
-            "body_write", {**body, "dry_run": False, "confirmed": True}, invalidate=("body_query",),
+            "body_write", {**body, "dry_run": dry_run, "confirmed": True}, invalidate=("body_query",),
         )

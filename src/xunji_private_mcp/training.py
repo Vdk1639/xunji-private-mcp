@@ -165,12 +165,14 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         }
 
     @server.tool(annotations=ToolAnnotations(destructiveHint=True, idempotentHint=True, openWorldHint=True))
-    async def upsert_training(ctx: Context, trains: list[dict[str, Any]], client_request_id: str) -> Any:
+    async def upsert_training(ctx: Context, trains: list[dict[str, Any]], client_request_id: str, dry_run: bool = False) -> Any:
         """Create or patch up to four same-day trainings.
 
         Provide datestr and movements for new records. Use localid for updates and include only changed fields.
         If movements are supplied for an update they replace the entire list, including unfinished sets.
         Use verified Chinese movement names and reuse client_request_id when retrying the same write.
+
+        预演模式。为 true 时返回变更摘要但不实际写入；为 false 时执行真实写入。建议先用 dry_run: true 获取 res.summary，展示给用户确认后，再用 dry_run: false 执行真实操作。
         """
         if not client_request_id.strip():
             raise ToolError("请提供唯一 client_request_id，重试相同写入时保留此值。")
@@ -180,12 +182,12 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
             raise ToolError("该日期已有训练写入待确认或提交，请稍后重试。")
         pending_days.add(pending)
         try:
-            return await apply_training_update(ctx, trains, day, client_request_id)
+            return await apply_training_update(ctx, trains, day, client_request_id, dry_run)
         finally:
             pending_days.remove(pending)
 
     async def apply_training_update(
-        ctx: Context, trains: list[dict[str, Any]], day: date, client_request_id: str,
+        ctx: Context, trains: list[dict[str, Any]], day: date, client_request_id: str, dry_run: bool = False,
     ) -> Any:
         identifiers = [train.get("localid") for train in trains if "localid" in train]
         if any(type(value) not in (int, str) or not str(value).strip() for value in identifiers):
@@ -225,13 +227,32 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
                     raise ToolError("确认期间原训练发生变化。请重新读取、提交并确认修改。")
             return await api.call(
                 "training_write",
-                {"schema_version": TRAIN_SCHEMA, "client_request_id": client_request_id, "dry_run": False,
+                {"schema_version": TRAIN_SCHEMA, "client_request_id": client_request_id, "dry_run": dry_run,
                  "include_full_data": True, "res": payload},
                 rate_scope=day.isoformat(),
                 invalidate=("training_read",),
             )
         finally:
             committing_days.remove(pending)
+
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
+    async def delete_training(datestr: date, localid: int | None = None) -> dict[str, Any]:
+        """Delete a training record. Note: the upstream API does not provide deletion functionality.
+
+        Deletion must be performed within the 训记 App. This tool provides guidance on alternatives:
+        - To modify an existing training, use upsert_training
+        - To clear training movements, use upsert_training with an empty movements array
+        """
+        try:
+            day = date.fromisoformat(datestr.isoformat() if isinstance(datestr, date) else datestr)
+        except (ValueError, TypeError, AttributeError):
+            raise ToolError("请提供 YYYY-MM-DD 格式的 datestr。")
+
+        return {
+            "success": False,
+            "message": "上游 API 不提供删除接口。请在训记 App 内手动删除训练记录。",
+            "note": "如需修改已有训练，可以使用 upsert_training 工具；如需清空训练内容，可以传入空的 movements 数组。"
+        }
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
     async def list_official_plans() -> Any:

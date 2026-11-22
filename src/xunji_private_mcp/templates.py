@@ -105,6 +105,7 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         upserts: list[dict[str, Any]] | None = None,
         deletes: list[dict[str, Any]] | None = None,
         folder_update: dict[str, Any] | None = None,
+        dry_run: bool = False,
     ) -> Any:
         """Apply confirmed changes to the single Agent folder.
 
@@ -113,6 +114,8 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         movement/rules. Specified movement lists replace the entire list. A delete uses template_id and
         base_version. To rename the folder, pass folder_update with name and the folder's current base_version.
         Reuse mutation_id for the same change. A new template is allowed to recreate a missing Agent folder.
+
+        预演模式。为 true 时返回变更摘要但不实际写入；为 false 时执行真实写入。建议先用 dry_run: true 获取 res.summary，展示给用户确认后，再用 dry_run: false 执行真实操作。
         """
         upserts = upserts or []
         deletes = deletes or []
@@ -186,7 +189,7 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
             raise ToolError("Agent 文件夹最多保存 14 个模板。请明确选择要替换的模板后再提交。")
 
         try:
-            return await api.call("template_mutate", {**payload, "confirmed": True})
+            return await api.call("template_mutate", {**payload, "confirmed": True, "dry_run": dry_run})
         except UpstreamError as error:
             if error.code != "version_conflict":
                 raise

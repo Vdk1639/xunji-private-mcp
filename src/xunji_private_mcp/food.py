@@ -60,7 +60,9 @@ def shift_months(day: date, months: int) -> date:
 def register_tools(server: FastMCP, api: ApiClient) -> None:
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
     async def query_food_records(
-        start_date: date, end_date: date, include_detail: bool = True
+        start_date: Annotated[date, Field(description="查询范围起始日期，格式 YYYY-MM-DD。范围必须在过去一年至未来三个月之间（以调用时为准），且 start_date <= end_date。")],
+        end_date: Annotated[date, Field(description="查询范围结束日期，格式 YYYY-MM-DD。范围必须在过去一年至未来三个月之间（以调用时为准），且 start_date <= end_date。")],
+        include_detail: bool = True
     ) -> Any:
         """Read the requested inclusive date range of Xunji food records."""
         today = datetime.now(timezone(timedelta(hours=8))).date()
@@ -78,15 +80,35 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         )
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
+    async def search_food(
+        keyword: Text, limit: Annotated[int, Field(ge=1)] = 8
+    ) -> Any:
+        """Search Xunji's official food database for food items.
+
+        Returns matching foods with their nutritional information and unique identifiers.
+        The returned uniquekey, ntr (nutrition per 100g: cal/protein/fat/carb), and units
+        are required for recording food intake via upsert_food_records.
+
+        Prefer the foods array in the result. Each record contains:
+        - uniquekey: Unique identifier for the food
+        - ntr: Nutrition per 100g (cal, protein, fat, carb)
+        - units: Portion unit conversions
+        - name: Food name
+
+        If no suitable official food is found, consider creating a custom food via upsert_custom_food.
+        """
+        return await api.call("food_search", {"keyword": keyword, "limit": limit}, cache_ttl=15)
+
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
     async def search_official_food(
         keyword: Text, limit: Annotated[int, Field(ge=1)] = 8
     ) -> Any:
-        """Search Xunji's official foods. Prefer foods over the compact d array in the result.
+        """Alias for search_food. Search Xunji's official foods. Prefer foods over the compact d array in the result.
 
         Each d row is [id, name, cal, carb, fat, protein, foodpic, uniquekey, units].
         Nutrition values are per 100 g. Preserve uniquekey, ntr and units when recording a match.
         """
-        return await api.call("food_search", {"keyword": keyword, "limit": limit}, cache_ttl=15)
+        return await search_food(keyword, limit)
 
     @server.tool(
         annotations=ToolAnnotations(
@@ -97,17 +119,20 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         foods: Annotated[list[FoodRecord], Field(min_length=1)],
         ctx: Context,
         client_request_id: Text | None = None,
+        dry_run: bool = False,
     ) -> Any:
         """Add or update food records. Supply the record id for updates.
 
         Obtain uniquekey, per-100g ntr and any units from official search or the saved custom food.
         Ask the user to resolve uncertain food matches, meal types, amounts or units.
         Reuse client_request_id if retrying the same request after an uncertain result.
+
+        预演模式。为 true 时返回变更摘要但不实际写入；为 false 时执行真实写入。建议先用 dry_run: true 获取 res.summary，展示给用户确认后，再用 dry_run: false 执行真实操作。
         """
         records = [food.model_dump(mode="json", exclude_none=True) for food in foods]
         request_id = client_request_id or str(uuid4())
         return await api.call(
-            "food_write", {"client_request_id": request_id, "dry_run": False, "foods": records},
+            "food_write", {"client_request_id": request_id, "dry_run": dry_run, "foods": records},
             invalidate=("food_query",),
         )
 
@@ -124,6 +149,7 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         units: list[FoodUnit] | None = None,
         uniquekey: Text | None = None,
         client_request_id: Text | None = None,
+        dry_run: bool = False,
     ) -> Any:
         """Save a custom food. Use a custom food when official search
         has no suitable match or the user requests one. For updates, supply its existing uniquekey.
@@ -131,6 +157,8 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         Provide a real nutrition source and known kcal, protein, fat and carbohydrate per 100 g.
         The source is shown to the user. Omit portion units for gram-based tracking.
         Use food from the result when recording that food.
+
+        预演模式。为 true 时返回变更摘要但不实际写入；为 false 时执行真实写入。建议先用 dry_run: true 获取 res.summary，展示给用户确认后，再用 dry_run: false 执行真实操作。
         """
         if units is not None and ntr.foodUnit is not None and units != ntr.foodUnit:
             raise ToolError("units 与 ntr.foodUnit 必须一致。")
@@ -149,7 +177,7 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         )
         request_id = client_request_id or str(uuid4())
         return await api.call(
-            "food_custom", {"client_request_id": request_id, "dry_run": False, "food": food},
+            "food_custom", {"client_request_id": request_id, "dry_run": dry_run, "food": food},
         )
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
@@ -170,16 +198,20 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
         target_date: date,
         ctx: Context,
         client_request_id: Text | None = None,
+        dry_run: bool = False,
     ) -> Any:
         """Apply a saved food template to a specific date.
 
         Copies all meals from the template to the target date. Obtain template_id
         from list_food_templates. Reuse client_request_id when retrying.
 
+        预演模式。为 true 时返回变更摘要但不实际写入；为 false 时执行真实写入。建议先用 dry_run: true 获取 res.summary，展示给用户确认后，再用 dry_run: false 执行真实操作。
+
         Args:
             template_id: Template identifier from list_food_templates
             target_date: Date to apply the template to
             client_request_id: Unique request ID for idempotency
+            dry_run: Preview mode - return summary without writing if true
         """
         request_id = client_request_id or str(uuid4())
         return await api.call(
@@ -188,6 +220,7 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
                 "template_id": template_id,
                 "target_date": target_date.isoformat(),
                 "client_request_id": request_id,
+                "dry_run": dry_run,
             },
             invalidate=("food_query",),
         )

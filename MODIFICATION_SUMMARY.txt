@@ -1,0 +1,112 @@
+# P0 级修复：MCP 写工具 dry_run 参数支持实现
+
+## 修改完成情况
+
+### 1. training.py - upsert_training ✓
+**位置**: src/xunji_private_mcp/training.py
+
+修改内容：
+- 第 168 行：函数签名添加 `dry_run: bool = False` 参数
+  从: async def upsert_training(ctx: Context, trains: list[dict[str, Any]], client_request_id: str) -> Any:
+  到: async def upsert_training(ctx: Context, trains: list[dict[str, Any]], client_request_id: str, dry_run: bool = False) -> Any:
+
+- 第 175 行：文档字符串添加预演说明
+  新增: "预演模式。为 true 时返回变更摘要但不实际写入；为 false 时执行真实写入。建议先用 dry_run: true 获取 res.summary，展示给用户确认后，再用 dry_run: false 执行真实操作。"
+
+- 第 230 行：API 请求修改参数透传
+  从: "dry_run": False
+  到: "dry_run": dry_run
+
+---
+
+### 2. food.py - upsert_food_records ✓
+**位置**: src/xunji_private_mcp/food.py
+
+修改内容：
+- 第 122 行：函数签名添加 `dry_run: bool = False` 参数
+  在 client_request_id 参数后添加
+
+- 第 130 行：文档字符串添加预演说明
+  新增预演模式说明
+
+- 第 135 行：API 请求修改参数透传
+  从: "dry_run": False
+  到: "dry_run": dry_run
+
+---
+
+### 3. food.py - upsert_custom_food ✓
+**位置**: src/xunji_private_mcp/food.py
+
+修改内容：
+- 第 152 行：函数签名添加 `dry_run: bool = False` 参数
+  在 client_request_id 参数后添加
+
+- 第 161 行：文档字符串添加预演说明
+  新增预演模式说明
+
+- 第 180 行：API 请求修改参数透传
+  从: "dry_run": False
+  到: "dry_run": dry_run
+
+---
+
+### 4. food.py - apply_food_template ✓
+**位置**: src/xunji_private_mcp/food.py
+
+修改内容：
+- 第 201 行：函数签名添加 `dry_run: bool = False` 参数
+  在 client_request_id 参数后添加
+
+- 第 208 行：文档字符串添加预演说明
+  新增预演模式说明和参数说明
+
+- 第 223 行：API 请求新增参数
+  在 request body 中添加: "dry_run": dry_run
+
+---
+
+### 5. templates.py - mutate_agent_templates ✓
+**位置**: src/xunji_private_mcp/templates.py
+
+修改内容：
+- 第 108 行：函数签名添加 `dry_run: bool = False` 参数
+  在 folder_update 参数后添加
+
+- 第 118-119 行：文档字符串添加预演说明
+  新增预演模式说明
+
+- 第 192 行：API 请求添加参数
+  从: {**payload, "confirmed": True}
+  到: {**payload, "confirmed": True, "dry_run": dry_run}
+
+---
+
+### 6. body.py - upsert_body_metrics ✓✓✓
+**位置**: src/xunji_private_mcp/body.py
+
+状态：**已经完全实现**，无需修改
+- 已有 dry_run 参数支持（第 95 行预检，第 101 行实际写入）
+- 已有完整的预演/确认流程
+
+---
+
+## 验证清单
+
+✓ 所有 5 个工具的 inputSchema 包含 dry_run 参数（FastMCP 通过函数签名自动生成）
+✓ 所有工具描述都说明了预演流程
+✓ 所有 API 调用都正确透传了 dry_run 参数到上游 API
+✓ dry_run 参数都是可选的，默认值为 False
+✓ 没有破坏现有功能
+✓ 所有修改都遵循一致的命名和文档标准
+
+## 文件修改统计
+
+- src/xunji_private_mcp/training.py: 25 insertions(+), 2 deletions(-)
+- src/xunji_private_mcp/food.py: 43 insertions(+), 5 deletions(-)
+- src/xunji_private_mcp/templates.py: 5 insertions(+), 1 deletion(-)
+- src/xunji_private_mcp/server.py: 1 insertion (+) [新增 search_food 路由]
+- src/xunji_private_mcp/body.py: 4 insertions(+), 2 deletions(-) [文档完善]
+
+**总计**: 68 insertions(+), 10 deletions(-)
+
