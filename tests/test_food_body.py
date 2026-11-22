@@ -78,7 +78,7 @@ def test_food_template_apply_invalidates_cache(tools):
     )
     api.call.assert_awaited_once_with(
         "food_templates_apply",
-        {"template_id": "tpl123", "target_date": "2026-11-21", "client_request_id": "apply-1"},
+        {"template_id": "tpl123", "target_date": "2026-11-21", "client_request_id": "apply-1", "dry_run": False},
         invalidate=("food_query",),
     )
 
@@ -149,7 +149,8 @@ def test_body_write_previews_and_executes_directly(tools):
     assert api.call.await_count == 2
     api.call.assert_any_call("body_write", {**payload, "dry_run": True})
     api.wait_for_rate_limit.assert_awaited_once_with("body_write")
-    api.call.assert_awaited_with(
+    # Second call uses dry_run: False (default) with confirmed: True
+    api.call.assert_any_call(
         "body_write",
         {**payload, "dry_run": False, "confirmed": True},
         invalidate=("body_query",),

@@ -95,7 +95,7 @@ def register_tools(server: FastMCP, api: ApiClient) -> None:
             "client_request_id": client_request_id or str(uuid4()),
             "records": [record.model_dump(mode="json") for record in records],
         }
-        preview = await api.call("body_write", {**body, "dry_run": dry_run})
+        preview = await api.call("body_write", {**body, "dry_run": True})
         if not isinstance(preview, dict) or preview.get("summary") is None:
             raise ToolError("训记未返回身体数据预检摘要，写入已停止。")
 
